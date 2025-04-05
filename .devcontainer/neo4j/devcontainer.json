@@ -1,0 +1,9 @@
+{
+    "name": "Neo4j Dev Container",
+    "image": "neo4j:latest",
+    "appPort": [7474, 7687]
+    // "runArgs": [
+    //   "--env", "NEO4J_AUTH=neo4j/test"
+    // ],
+  }
+  

@@ -7,6 +7,8 @@ to prepare the `earthquakes_big.geojson.json` dataset in several ways.
 import pandas as pd
 import numpy as np
 
+DATASET_PATH = 'earthquakes_big.geojson.json'
+
 def prepare_dataset(df_path) -> pd.DataFrame:
     """Prepare the original dataset file named 'merged_df'.
     
@@ -49,5 +51,3 @@ def prepare_dataset(df_path) -> pd.DataFrame:
     merged_df[str_columns] = merged_df[str_columns].astype(pd.StringDtype())
 
     return merged_df
-
-DATASET_PATH = 'earthquakes_big.geojson.json'
