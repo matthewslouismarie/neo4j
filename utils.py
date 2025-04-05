@@ -1,13 +1,13 @@
 """Utility module for preparing the original JSON earthquakes dataset.
 
 This module was taken from the previous Cassandra report and provides functions
-to prepare the `earthquakes_big.geojson.json` dataset in several ways.
+to prepare the `earthquakes_big.geojson.jsonl` dataset in several ways.
 """
 
 import pandas as pd
 import numpy as np
 
-DATASET_PATH = 'earthquakes_big.geojson.json'
+DATASET_PATH = 'earthquakes_big.geojson.jsonl'
 
 def prepare_dataset(df_path) -> pd.DataFrame:
     """Prepare the original dataset file named 'merged_df'.
