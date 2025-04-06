@@ -6,91 +6,544 @@ author:
  - Matthews, Louis-Marie
  - Muller, Julie
 date: March the 10th, 2025
+geometry: margin=1.5cm
 ---
 
-# Setup
+# Initial setup
 
 ## Cloning the repository
 
 We start our journey by simpling cloning our repository, which contains the original version of the dataset we are working on: `earthquakes_big.geojson.jsonl`.
 
 ```
-git clone git@github.com:Jlemlr/MongoDB.git
+git clone https://github.com/matthewslouismarie/neo4j.git
 ```
 
-## Preparing the dataset
+## Exploring and understanding the original dataset
 
-First, as instructed, we will display one row of the original dataset. (We only formatted the first row for readability, no transformation of any kind was performed.)
+As mentionned above, our repository contains our original dataset, named `earthquakes_big.geojson.jsonl`. We renamed the extension to `.jsonl` in a bid to make it explicit that it is written with the JSON Lines file format.
+
+First, as instructed, we will display one row of the original dataset. (We only formatted the first row for readability and trimmed lines that were too long for presentation only, no transformation of any kind was performed on the file itself.)
 
 ```json
 {
-    "type": "Feature",
-    "properties": {
-        "mag": 0.8,
-        "place": "6km W of Cobb, California",
-        "time": 1370259968000,
-        "updated": 1370260630761,
-        "tz": -420,
-        "url": "http://earthquake.usgs.gov/earthquakes/eventpage/nc72001620",
-        "detail": "http://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/
-          nc72001620.geojson",
-        "felt": null,
-        "cdi": null,
-        "mmi": null,
-        "alert": null,
-        "status": "AUTOMATIC",
-        "tsunami": null,
-        "sig": 10,
-        "net": "nc",
-        "code": "72001620",
-        "ids": ",nc72001620,",
-        "sources": ",nc,",
-        "types": ",general-link,geoserve,nearby-cities,origin,phase-data,
-        scitech-link,",
-        "nst": null,
-        "dmin": 0.00898315,
-        "rms": 0.06,
-        "gap": 82.8,
-        "magType": "Md",
-        "type": "earthquake"
-    },
-    "geometry": {
-        "type": "Point",
-        "coordinates": [
-            -122.7955,
-            38.8232,
-            3
-        ]
-    },
-    "id": "nc72001620"
+  "type": "Feature",
+  "properties": {
+    "mag": 0.8,
+    "place": "6km W of Cobb, California",
+    "time": 1370259968000,
+    "updated": 1370260630761,
+    "tz": -420,
+    "url": "http://earthquake.usgs.gov/earthquakes/eventpage/nc72001620",
+    "detail": "http://earthquake.../feed/v1.0/detail/nc72001620.geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "AUTOMATIC",
+    "tsunami": null,
+    "sig": 10,
+    "net": "nc",
+    "code": "72001620",
+    "ids": ",nc72001620,",
+    "sources": ",nc,",
+    "types": ",general-link,geoserve,nearby-cities,origin,phase-data,scitech-link,",
+    "nst": null,
+    "dmin": 0.00898315,
+    "rms": 0.06,
+    "gap": 82.8,
+    "magType": "Md",
+    "type": "earthquake"
+  },
+  "geometry": {
+    "type": "Point",
+    "coordinates": [
+      -122.7955,
+      38.8232,
+      3
+    ]
+  },
+  "id": "nc72001620"
 }
 ```
 
-We will also make sure to keep a note of the number of lines of the original dataset.
+Let's now explore the meaning of each property. We base our explanations on [the ANSS Comprehensive Earthquake Catalog (ComCat) Documentation](https://earthquake.usgs.gov/data/comcat/index.php), provided by the official source for our original data.
+
+Term | Meaning
+---- | -------
+`alert` | Either "`green`", "`yellow`" or "`red`". This measures the fatalities and the economic loss caused by the earthquake [according to the PAGER scale](https://earthquake.usgs.gov/data/comcat/index.php#alert).
+`cdi` | The maximum reported intensity of the earthquake. An earthquake can be associated with many intensities, as the intensity is only what was recorded by a specific sensor at a specific location, and it varies based on the type of ground and the distance from the earthquake. Read more on the USGS's [Earthquake Magnitude, Energy Release, and Shaking Intensity](https://www.usgs.gov/programs/earthquake-hazards/earthquake-magnitude-energy-release-and-shaking-intensity) page.
+`code` | A code assigned by the **source** for the data. It identifies the earthquake among all other earthquakes **provided by the same source**.
+`coordinates` | "An earthquake begins to rupture at a **hypocenter** which is defined by a position on the surface of the earth (**epicenter**) and a depth below this point (**focal depth**). We provide the coordinates of the epicenter in units of latitude and longitude."
+`detail` | "Link to GeoJSON detail feed from a GeoJSON summary feed."
+`dmin` | "Horizontal distance from the epicenter to the nearest station (in degrees). 1 degree is approximately 111.2 kilometers. **In general, the smaller this number, the more reliable is the calculated depth of the earthquake.**"
+`felt` | "The total number of felt reports submitted to the DYFI? system." **This is not to be confused with how strongly the earthquake was felt!** (Though there may be a correlation.)
+`gap` | "The largest azimuthal gap between azimuthally adjacent stations (in degrees). **In general, the smaller this number, the more reliable is the calculated horizontal position of the earthquake.** Earthquake locations in which the azimuthal gap exceeds 180 degrees typically have large location and depth uncertainties."
+`id` | A unique identifier for the event, made of the source network identifier and the network-assigned `code`.
+`ids` | **A comma-separated list of event ids that are associated to an event.** This will be easy to represent in Neo4j!
+`mag`, `magtype` | The magnitude of the earthquake, which is a measure of how big it is. An earthquake only has one true magnitude of a certain type, although it can have intensities. There are many magnitude types, such as Richter. For a list of magnitude types, read USGS's [Magnitude Types](https://www.usgs.gov/programs/earthquake-hazards/magnitude-types) page.
+`mmi` | The maximum estimated instrumental intensity for the event. Computed by [ShakeMap](https://earthquake.usgs.gov/data/shakemap/).
+`net` | The ID of a data contributor. Identifies the network considered to be the preferred source of information for this event.
+`nst` | The total number of seismic stations used to determine earthquake location."
+`place` | "Textual description of named geographic region near to the event."
+`rms` | "The root-mean-square (RMS) travel time residual, in sec, using all weights. This parameter provides a measure of the fit of the observed arrival times to the predicted arrival times for this location. Smaller numbers reflect a better fit of the data. The value is dependent on the accuracy of the velocity model used to compute the earthquake location, the quality weights assigned to the arrival time data, and the procedure used to locate the earthquake."
+`sig` | "A number describing how significant the event is. Larger numbers indicate a more significant event. This value is determined on a number of factors, including: magnitude, maximum MMI, felt reports, and estimated impact."
+`sources` | "A comma-separated list of network contributors."
+`status` | Either `AUTOMATIC`, `REVIEWED`, `PUBLISHED`. "Indicates whether the event has been reviewed by a human."
+`time` | When did the event occur.
+`tsunami` | "This flag is set to "1" for large events in oceanic regions and "0" otherwise. **The existence or value of this flag does not indicate if a tsunami actually did or will exist.**"
+`type` | Either `earthquake`, `quarry`. It is not explicitely defined what `quarry` means in this context, but it probably means the event was not an actual earthquake but a **quarry blast**, a controlled explosion designed to create or extend quarries. [You can find examples of quarry blasts on YouTube, it’s fairly impressive.](https://www.youtube.com/watch?v=SBi1NXOnkE4)
+`types` | `cap`, `dyfi`, `general-link`, `origin`, `p-wave-travel-times`, `phase-data`. A comma-separated list of product types associated to this event.
+`updated` | "Time when the event was most recently updated"
+`url` | Link to USGS Event Page for event.
+
+Before we finish, we will also make sure to keep a note of the number of lines of the original dataset.
 
 ```bash
 root@6d7fb3f3b522:/workspaces/MongoDB# wc -l earthquakes_big.geojson.jsonl 
 7668 earthquakes_big.geojson.jsonl
 ```
 
-There are are 7668 newline characters. In other words, there are 766**9** lines. :) 
+There are are 7668 newline characters. In other words, there are 766**9** lines. :)
 
-Next, we load our original dataset `earthquakes_big.geojson.jsonl` into a Pandas DataFrame and transform it into another DataFrame called `merged_df`, the same we used since the Cassandra assignment. For this, we will use `prepare_dataset` function defined in `utils.py`. This is the same preparation code than we used in the Cassandra assignment, with a few improvements. (Which are documented in the file `utils.py`.) **The code that was used is included in the appendices of this report (at the very end of this document).**
+## Transforming the dataset for Neo4j
+
+In this section, we will load our original dataset into Python, transform it, and save the transformed dataset to a file named `merged_df.jsonl` so that it can be imported by Neo4j and make use of its graph features (such as displaying relationships between different kinds of nodes).
 
 Before anything, we install the Python librairies needed by our code:
 
 ```bash
-pip install -r requirements.txt
+root@b25ec756d684:/workspaces/neo4j# pip install -r requirements.txt
 ```
 
-Then, we create the `merged_df` DataFrame.
+### Creating the DataFrame
+
+Next, we load our original dataset `earthquakes_big.geojson.jsonl` into a Pandas DataFrame and transform it into another DataFrame called `merged_df`, the same we used since the Cassandra assignment. For this, we will use `prepare_dataset` function defined in `utils.py`. This is the same preparation code than we used in the Cassandra assignment, with a few improvements. (Which are documented in the file `utils.py`.) **The code that was used is included in the appendices of this report (at the very end of this document).**
 
 ```python
 merged_df = utils.prepare_dataset(utils.DATASET_PATH)
 ```
 
-The resulting `merged_df` dataset has the correct types applied. Unneeded (*i.e.* static) columns are removed. Timestamps are converted to the right format and are made timezone-independent. Nested properties are flattened, etc. Duplicates values for magnitude were unified (*e.g.* `mb_Lg` and `MbLg` stand for the same thing).
+The resulting `merged_df` dataset has the correct types applied. Unneeded (*i.e.* static) columns are removed. Timestamps are converted to the right format and are made timezone-independent millisecond timestamps. Nested properties are flattened, etc. Duplicates values for magnitude were unified (*e.g.* `mb_Lg` and `MbLg` stand for the same thing).
 
+### Preparing our JSON file for Neo4j
+
+Now, we will need to convert our JSON to a JSON format Neo4j can understand and import data from. But first, we need to define what kind of nodes and relationships we want to have.
+
+#### Defining our schema
+
+From this description of the properties that we gave in [Exploring and understanding the original dataset](#exploring-and-understanding-the original-dataset), we can infer several types of *Nodes* and *Relationships* for our future graph database:
+
+ - **Earthquake** (obviously)
+ - **Source Network**: Represent a network of recording stations that provided the information for a particular earthquake.
+ - **Recorded by**: Represent the relationship between an earthquake and its primary source.
+ - **Also recorded by**: Represent the relationship between an earthquake and its secondary sources.
+
+We come up with the following ERD diagram:
+
+![The ERD diagram](./erd.svg)
+
+### Converting the JSON file for APOC
+
+APOC is the Neo4j plugin that is able to import data from a JSON file.
+
+In the Python file, each line must either be a Node or a Relationship, as this is the format prescribed by the APOC importer.
+
+APOC expects a **JSON Lines format file**, which simply means a file where each line contains a valid JSON value. In the case of APOC, it expects each line to be an object of either of the following formats:
+
+#### Case 1: for nodes
+
+```json
+{
+  "id": "An ID unique among all nodes",
+  "type": "node",
+  "label": ["ALabelForTheNode"], // e.g. "Earthquake",
+  "property": {
+    // The node's properties...
+  }
+}
+```
+
+#### Case 2: for relationships
+
+```json
+{
+  "id": "An ID unique among all relationships",
+  "type": "relationship",
+  "label": "A_LABEL_FOR_THE_RELATIONSHIP", // e.g. "RECORDED_BY",
+  "property": {
+    // The node's properties...
+  },
+  
+  "start": {
+    "id": "Some node ID"
+  },
+  "end": {
+    "id": "Some node ID"
+  }
+}
+```
+
+#### Creating the Nodes
+
+The name of the node, as it appears in Neo4j, is its first property. For this reason, we add a description for each earthquake as the very first column:
+
+```python
+merged_df.insert(
+    loc=0,
+    column='description',
+    value="Mag " + merged_df['mag'].astype(str) + " in " + merged_df['place'],
+)
+```
+
+We then convert each earthquake to the correct format as described previously:
+
+```python
+earthquakes_df = pd.DataFrame(
+    {
+        'id': merged_df['id'],
+        'type': 'node',
+        'properties': merged_df.to_dict(orient='records'),
+    },
+)
+
+earthquakes_df['labels'] = earthquakes_df.apply(lambda x: ['Earthquake'], axis=1)
+```
+
+We do the same for the source networks:
+
+```python
+neo4j_networks = pd.DataFrame(
+    {
+        'type': 'node',
+        'labels' : 'Network',
+        'id': merged_df['net'].unique(),
+    }
+)
+
+neo4j_networks['labels'] = neo4j_networks['labels'].apply(lambda x: [x])
+```
+
+#### Creating the Relationships
+
+Now that the Nodes are created, we can create the Relationships.
+
+```python
+relationships_df = pd.DataFrame({
+    'type': 'relationship',
+    'label': 'RECORDED_BY',
+    'start': merged_df['id'],
+    'end': merged_df['net'],
+})
+```
+
+We now create the `LINKED_TO` relationships. This creates a relationship between from any earthquake with an associated ID (in the `ids` property) different from its own, and the designated earthquake.
+
+```python
+for index, row in merged_df[merged_df.apply(lambda x: len(x['ids']) > 1, axis=1)].iterrows():
+    for id in row['ids']:
+        # We verify the id is not the earthquake's own ID
+        if id != row['id']:
+            # We create the relationship and add it to `relationships_df`
+            relationships_df = pd.concat([
+                relationships_df,
+                pd.DataFrame({
+                    'type': 'relationship',
+                    'label': 'LINKED_TO',
+                    'start': row['id'],
+                    'end': id,
+                }, index=range(1))
+            ], ignore_index=True)
+```
+
+Now, we do the `ALSO_RECORDED_BY` relationship (for additional source networks).
+
+```python
+for index, row in merged_df[merged_df.apply(lambda x: len(x['sources']) > 1, axis=1)].iterrows():
+    for id in row['sources']:
+        # We verify the id is not the earthquake's own ID
+        if id != row['net']:
+            # We create the relationship and add it to `relationships_df`
+            relationships_df = pd.concat([
+                relationships_df,
+                pd.DataFrame({
+                    'type': 'relationship',
+                    'label': 'ALSO_RECORDED_BY',
+                    'start': row['id'],
+                    'end': id,
+                }, index=range(1))
+            ], ignore_index=True)
+```
+
+Finally, we do some final processing to have the correct format as described previously:
+
+```python
+# Finally, we apply the correct format for APOC, which requires `start` and
+# `end` to be structured like nodes, and we also add an `id` property.
+relationships_df['start'] = relationships_df['start'].apply(lambda x: {'id': x})
+relationships_df['end'] = relationships_df['end'].apply(lambda x: {'id': x})
+relationships_df['id'] = relationships_df.index
+```
+
+## Creating and filling the Neo4j DBMS
+
+In this section, we will create a Neo4j DBMS and load our transformed data into it.
+
+### Creating the Neo4j DBMS
+
+First, we need to create a Neo4j server. We will use Docker, and more precisely Docker Compose for that.
+
+To automate the process, we chose to create a `compose.yml` file, as it makes it possible to define once and for all the ports to publish, the volumes to create and the environment variables to set.
+
+```yaml
+services:
+  neo4j_dsn:
+    image: neo4j:latest # We use the latest community (free) version of Neo4j
+    ports:
+      - 7474:7474 # We open this port for the server HTTP web interface
+      - 7687:7687 # We open this port as it is used by Neo4j internally
+    volumes:
+      - ./data:/var/lib/neo4j/import # The dataset needs to be in this folder to be imported
+    environment:
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4J_PLUGINS=["apoc"] # We need this plugin to import data from JSON
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.\\\*
+      - NEO4J_AUTH=none # No password needed, we are only doing tests in dev
+```
+
+Creating our server is as simple as running `docker-compose up` **from the folder containing the `compose.yml` file**!
+
+#### Importing into Neo4j
+
+Now that our server is running (see previous step), we can now import our data into Neo4j.
+
+![Importing the prepared dataset into Neo4j](image.png)
+
+The process of calling `apoc.import.json` takes a very long time, which is normal because our file is now very large (and it is read from a Docker volume, which doesn't help). For this reason, we will not add additional relationships to our data, such as Country, which would take too much time to import and run queries on.
+
+We can also very we have the correct number of earthquakes:
+
+![Counting the number of earthquakes](image-1.png)
+
+We also notice our nodes are properly named with a descriptive name!
+
+![Our nodes are properly named](image-2.png)
+
+# Running the queries
+
+Now that our server is set up, and that our database is created and filled with the data, we can run queries on the data!
+
+## Simple queries
+
+### 1. Understanding the scale of the `sig` (significance) property
+
+As was described in @todo, `sig` is a number that represents how significant the earthquake was by compining multiple factors. We recall: "This value is determined on a number of factors, including: magnitude, maximum MMI, felt reports, and estimated impact." In other words, it combines the damages caused by the earthquakes as well as how big it was and how strongly it was felt.
+
+As such, it may very well be the intuitive metrics to describe an earthquake.
+
+First, we need to get an idea of the scale of this number, so we will simply compute some statistics on this property.
+
+```cypher
+MATCH (e:Earthquake)
+RETURN MIN(e.sig), AVG(e.sig), MAX(e.sig), stDevP(e.sig);
+```
+
+The result:
+
+```json
+[
+  {
+    "MIN(e.sig)": 0,
+    "AVG(e.sig)": 62.95905593949685,
+    "MAX(e.sig)": 1110,
+    "stDevP(e.sig)": 97.82148428802358
+  }
+]
+```
+
+So, the significance of an earthquake is a positive number, with 0 being the lowest value. Values can be very different, as indicated by the 
+average value being 62 and the maximum value being 1110. However, most values are concentrated roughly around $62$ (at least, when compared with the maximum value of $1110$), as indicated by the standard deviation of $98$.
+
+### 2. What does a `sig` (significance) of $0$ mean?
+
+We notice some earthquakes have a significance of $0$ in the previous query. This may sound strange, as an earthquake necessarily has a magnitude, which should give it a significance, even if very low.
+
+For this reason, we want to check whether a significance of $0$ mean the earthquake is not significant at all, or whether the significance was not computed for this earthquake.
+
+To do that, we will list the earthquakes with a significance of $0$, and see whether they are all of trivial significance or not.
+
+Let's now try to see what their intensity and impact are:
+
+```
+MATCH (e:Earthquake)
+WHERE e.sig = 0
+RETURN COUNT(e), AVG(e.mag), MAX(e.mag);
+```
+
+```json
+[
+  {
+    "COUNT(e)": 143,
+    "AVG(e.mag)": 0.06647887323943662,
+    "MAX(e.mag)": 0.18
+  }
+]
+```
+
+We obtain 143 earthquakes, with a very low average magnitude ($\approx 0.07$), and a maximum magnitude of $0.18$. This is extremely low, regardless of the magnitude type.
+
+We conclude that a significance of $0$ is indeed representative of the earthquake, and means it was a very low importance.
+
+### 3. Getting related earthquakes
+
+An earthquake can be related to another one, as indicated by the `ids` property (see @todo). Let’s find earthquakes that are linked to others!
+
+```
+MATCH (e1:Earthquake)-[l:LINKED_TO]->(e2:Earthquake)
+RETURN e1, l, e2;
+```
+![Two linked earthquakes](./query1_3.png)
+
+We find only one relationship between two earthquakes. This is because many earthquakes are related to others that are not included in our original dataset! (Our dataset is just a subset of a much bigger dataset.)
+
+### 4. Getting a visualisation of the networks
+
+Networks are networks of recording stations that collectively provided all of our data about earthquakes.
+
+It would be nice to know how many there are, who they are, and how many earthquakes they recorded.
+
+```
+MATCH p=()-[:RECORDED_BY]->() RETURN p;
+```
+
+![Networks and their earthquakes](./list_of_networks.png)
+
+This gives us a nice visualisation of the number of networks and the number of earthquakes for which they are the primary source. There are 13 networks that are the primary source for at least one earthquake. Some networks are the primary source for many, many earthquakes, while others are the primary source for very few earthquakes.
+
+### 5. Stastics about the networks
+
+Okay. For performance reasons, we can make the query a bit simpler and get number about the number of networks and the number of earthquakes for which they are the primary source.
+
+```
+MATCH (n:Network)
+OPTIONAL MATCH (:Earthquake)-[recorded_by:RECORDED_BY]->(n)
+OPTIONAL MATCH (:Earthquake)-[also_recorded_by:ALSO_RECORDED_BY]->(n)
+RETURN n.neo4jImportId, count(recorded_by) AS n_primary_earthquakes, count(also_recorded_by) AS n_secondary_earthquakes
+ORDER BY n_primary_earthquakes DESC, n_secondary_earthquakes DESC;
+```
+
+`n.neo4jImportId` | `n_primary_earthquakes` | `n_secondary_earthquakes`
+----------------- | ----------------------- | -------------------------
+`us` | 103824 | 103824
+`ak` | 51818 | 51818
+`ci` | 13068 | 13068
+`nc` | 12852 | 12852
+`nn` | 8091 | 8091
+`mb` | 477 | 477
+`uw` | 432 | 432
+`uu` | 288 | 0
+`pr` | 219 | 0
+`hv` | 109 | 0
+`nm` | 80 | 0
+`se` | 7 | 0
+`ld` | 4 | 4
+
+### 6. Statistics about quarry blasts
+
+Quarry blasts are controlled explosions designed to create craters and extend quarries. [You can find examples on YouTube.](https://www.youtube.com/watch?v=SBi1NXOnkE4)
+
+We expect quarry blasts to have a much lesser magnitude and depth that earthquakes, so let's compare the two.
+
+```
+MATCH (e:Earthquake)
+WHERE e.type = 'quarry'
+RETURN COUNT(e), AVG(e.mag), MAX(e.mag), MAX(e.felt);
+```
+
+`COUNT(e)` | `AVG(e.mag)` | `MAX(e.mag)` | `MAX(e.felt)`
+---------- | ------------ | ------------ | -------------
+$129$ | $1.4604651162790696$ | $2.5$ | $2.0$
+
+So apparently, those quarry blasts can have quite a significant magnitude! So significant that for one of them, two people actually reported the earthquake.
+
+As a bonus, let’s learn more about this earthquake.
+
+```
+MATCH (e:Earthquake)
+WHERE e.type = 'quarry' AND e.felt = 2
+RETURN e;
+```
+
+Property | Value
+-------- | -----
+`<id>` | 4:f78c7a6e-6ab3-45d8-85f4-82059e2df715:10833
+dmin | 0.00898315
+code | "71995021"
+sources | ["nc"]
+description | "Mag 1.7000000000000002 in 11km E of Quarry near Portola Valley, CA"
+type | "quarry"
+sig | 45
+tsunami | false
+mag | 1.7
+gap | 43.2
+rms | 0.31
+id | "nc71995021"
+place | "11km E of Quarry near Portola Valley, CA"
+net | "nc"
+types | ["cap", "dyfi", "general-link", "geoserve", "nearby-cities", "origin", "phase-data", "scitech-link"]
+magtype | "md"
+felt | 2.0
+coordinates | [-122.1073, 37.3358, 0.0]
+cdi | 2.0
+url | "http://earthquake.usgs.gov/earthquakes/eventpage/nc71995021"
+neo4jImportId | "nc71995021"
+ids | ["nc71995021"]
+time | 1369084281100
+detail | "http://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/nc71995021.geojson"
+updated | 1369168393549
+status | "REVIEWED"
+
+If we look on Google Maps, we can see the location of the quarry blast.
+
+![The location of the quarry blast](image-4.png)
+
+The given location seems to be a about one kilometer away from its real location, as the quarry seems to be south of the given location. But still, this is precise enough!
+
+## Hard queries
+
+### 1. WHY are some earthquakes related?
+
+Okay, we've retried two earthquakes that are related in one of our simple queries (@todo link). However, we’re not sure what that means. Does that mean they share a similar cause? Magnitude? Location? Let's find out!
+
+They are both reviewed earthquakes, provided by the `ci` network, that happened close to "Meiners Oaks, California" (4 and 8km, respectively). They share a similar `cdi` (maximum reported intensity) of $3.7$ and $3.5$.
+
+However, their ML magnitude differ significantly: One is at $3.6$, the other is at $1.4$.
+
+So, their relation seems to come from their location. Let’s measure exactly how close they are, as well as how far apart they happened in time.
+
+```
+MATCH (e1:Earthquake)-[l:LINKED_TO]->(e2:Earthquake)
+RETURN point.distance(point({x: e2.coordinates[0], y: e2.coordinates[1], z: e2.coordinates[2]}), point({x: e1.coordinates[0], y: e1.coordinates[1], z: e1.coordinates[2]})), (e2.time-e1.time)/1000;
+```
+```json
+[
+  {
+    "point.distance(point({x: e2.coordinates[0], y: e2.coordinates[1], z: e2.coordinates[2]}), point({x: e1.coordinates[0], y: e1.coordinates[1], z: e1.coordinates[2]}))": 5.700191085393541,
+    "(e2.time-e1.time)/1000": 9
+  }
+]
+```
+
+
+They are indeed quite close, only 6km apart! And they happened only 9 seconds apart!
+
+We can even confirm how close they epicenters are on Google maps:
+
+![The earthquakes happened a few kilometers apart](image-3.png)
+
+So, an earthquake seems to be related to another when it happened close in time and in location.
 
 # Appendices
 
@@ -146,7 +599,7 @@ def prepare_dataset(df_path) -> pd.DataFrame:
     df_properties.drop('tz', axis=1, inplace=True)
 
     # There are some duplicate values in `magType` column but formatted differently.
-    # So let’s remove the duplicate values from the `magType` column.
+    # So let's remove the duplicate values from the `magType` column.
     df_properties['magType'] = df_properties['magType'].str.lower().str.replace('_', '')
 
     # If it caused a tsunami (convert to Boolean correct format)
