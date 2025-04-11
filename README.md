@@ -1,13 +1,44 @@
 ---
-title: OCC2 MongoDB Report
+title: OCC2 Neo4j Report
 author:
- - Klink, Carl
- - Lefebvre, Romain
  - Matthews, Louis-Marie
- - Muller, Julie
-date: March the 10th, 2025
+date: April the 7th, 2025
 geometry: margin=1.5cm
 ---
+
+# Table of contents
+
+<!-- TOC start (generated with https://github.com/derlin/bitdowntoc) -->
+
+- [Initial setup](#initial-setup)
+  * [Cloning the repository](#cloning-the-repository)
+  * [Exploring and understanding the original dataset](#exploring-and-understanding-the-original-dataset)
+  * [Transforming the dataset for Neo4j](#transforming-the-dataset-for-neo4j)
+    + [Creating the DataFrame](#creating-the-dataframe)
+    + [Preparing our JSON file for Neo4j](#preparing-our-json-file-for-neo4j)
+      - [Defining our schema](#defining-our-schema)
+    + [Converting the JSON file for APOC](#converting-the-json-file-for-apoc)
+      - [Case 1: for nodes](#case-1-for-nodes)
+      - [Case 2: for relationships](#case-2-for-relationships)
+      - [Creating the Nodes](#creating-the-nodes)
+      - [Creating the Relationships](#creating-the-relationships)
+  * [Creating the Neo4j database and importing the data in it](#creating-the-neo4j-database-and-importing-the-data-in-it)
+    + [Creating the Neo4j database](#creating-the-neo4j-database)
+      - [Importing into Neo4j](#importing-into-neo4j)
+- [Running the queries](#running-the-queries)
+  * [Simple queries](#simple-queries)
+  * [Hard queries](#hard-queries)
+  * [Complex query](#complex-query)
+- [Appendices](#appendices)
+  * [utils.py](#utils.py)
+  * [Neo4j is a pain](#neo4j-is-a-pain)
+    + [Confusing error messages](#confusing-error-messages)
+    + [No ability to remove existing labels](#no-ability-to-remove-existing-labels)
+    + [Inconsistent and unpredictable versionning](#inconsistent-and-unpredictable-versionning)
+
+<!-- TOC end -->
+
+\pagebreak
 
 # Initial setup
 
@@ -21,7 +52,7 @@ git clone https://github.com/matthewslouismarie/neo4j.git
 
 ## Exploring and understanding the original dataset
 
-As mentionned above, our repository contains our original dataset, named `earthquakes_big.geojson.jsonl`. We renamed the extension to `.jsonl` in a bid to make it explicit that it is written with the JSON Lines file format.
+As mentioned above, our repository contains our original dataset, named `earthquakes_big.geojson.jsonl`. We renamed the extension to `.jsonl` in a bid to make it explicit that it is written with [the JSON Lines file format](https://jsonlines.org/).
 
 First, as instructed, we will display one row of the original dataset. (We only formatted the first row for readability and trimmed lines that were too long for presentation only, no transformation of any kind was performed on the file itself.)
 
@@ -132,7 +163,7 @@ Now, we will need to convert our JSON to a JSON format Neo4j can understand and 
 
 #### Defining our schema
 
-From this description of the properties that we gave in [Exploring and understanding the original dataset](#exploring-and-understanding-the original-dataset), we can infer several types of *Nodes* and *Relationships* for our future graph database:
+From this description of the properties that we gave in [Exploring and understanding the original dataset](#exploring-and-understanding-the-original-dataset), we can infer several types of *Nodes* and *Relationships* for our future graph database:
 
  - **Earthquake** (obviously)
  - **Source Network**: Represent a network of recording stations that provided the information for a particular earthquake.
@@ -141,7 +172,7 @@ From this description of the properties that we gave in [Exploring and understan
 
 We come up with the following ERD diagram:
 
-![The ERD diagram](./erd.svg)
+![The ERD diagram](image-5.png)
 
 ### Converting the JSON file for APOC
 
@@ -185,6 +216,13 @@ APOC expects a **JSON Lines format file**, which simply means a file where each 
 ```
 
 #### Creating the Nodes
+
+We first convert coordinates to a format Neo4j can understand
+
+```python
+merged_df['coordinates'] = merged_df['coordinates']
+  .apply(lambda x: {'latitude': x[1], 'longitude': x[0], 'height': x[2]})
+```
 
 The name of the node, as it appears in Neo4j, is its first property. For this reason, we add a description for each earthquake as the very first column:
 
@@ -285,11 +323,11 @@ relationships_df['end'] = relationships_df['end'].apply(lambda x: {'id': x})
 relationships_df['id'] = relationships_df.index
 ```
 
-## Creating and filling the Neo4j DBMS
+## Creating the Neo4j database and importing the data in it
 
-In this section, we will create a Neo4j DBMS and load our transformed data into it.
+In this section, we will create a Neo4j server, a DBMS, and a database, and we will import our transformed dataset into it.
 
-### Creating the Neo4j DBMS
+### Creating the Neo4j database
 
 First, we need to create a Neo4j server. We will use Docker, and more precisely Docker Compose for that.
 
@@ -308,8 +346,8 @@ services:
       - NEO4J_apoc_export_file_enabled=true
       - NEO4J_apoc_import_file_enabled=true
       - NEO4J_apoc_import_file_use__neo4j__config=true
-      - NEO4J_PLUGINS=["apoc"] # We need this plugin to import data from JSON
-      - NEO4J_dbms_security_procedures_unrestricted=apoc.\\\*
+      - NEO4J_PLUGINS=["apoc", "graph-data-science"] # We need these plugins for import and analysis
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.*
       - NEO4J_AUTH=none # No password needed, we are only doing tests in dev
 ```
 
@@ -318,6 +356,18 @@ Creating our server is as simple as running `docker-compose up` **from the folde
 #### Importing into Neo4j
 
 Now that our server is running (see previous step), we can now import our data into Neo4j.
+
+We first need to create constraints on the unicity of node IDs.
+
+```
+CREATE CONSTRAINT IF NOT EXISTS FOR (n:Earthquake) REQUIRE n.neo4jImportId IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS FOR (n:Network) REQUIRE n.neo4jImportId IS UNIQUE;
+CALL apoc.import.json("file://merged_df.jsonl");
+```
+
+**Note that these constraints automatically create indexes, making some our future queries run faster (well, when it is based on the ID at least).**
+
+The queries execute normally.
 
 ![Importing the prepared dataset into Neo4j](image.png)
 
@@ -331,6 +381,21 @@ We also notice our nodes are properly named with a descriptive name!
 
 ![Our nodes are properly named](image-2.png)
 
+We can now apply additional transformations on our data to make our queries simpler. Let’s create a `coordinates` field typed with Neo4j’s native 3D `Point` type!
+
+```
+MATCH (e:Earthquake)
+SET e.loc = point({
+  latitude: e.`coordinates.latitude`,
+  longitude: e.`coordinates.longitude`,
+  height: e.`coordinates.height`
+});
+```
+
+Neo4j returns "Set 7669 properties"!
+
+\pagebreak
+
 # Running the queries
 
 Now that our server is set up, and that our database is created and filled with the data, we can run queries on the data!
@@ -339,7 +404,7 @@ Now that our server is set up, and that our database is created and filled with 
 
 ### 1. Understanding the scale of the `sig` (significance) property
 
-As was described in @todo, `sig` is a number that represents how significant the earthquake was by compining multiple factors. We recall: "This value is determined on a number of factors, including: magnitude, maximum MMI, felt reports, and estimated impact." In other words, it combines the damages caused by the earthquakes as well as how big it was and how strongly it was felt.
+As was described in [Exploring and understanding the original dataset](#exploring-and-understanding-the-original-dataset), `sig` is a number that represents how significant the earthquake was by compining multiple factors. We recall: "This value is determined on a number of factors, including: magnitude, maximum MMI, felt reports, and estimated impact." In other words, it combines the damages caused by the earthquakes as well as how big it was and how strongly it was felt.
 
 As such, it may very well be the intuitive metrics to describe an earthquake.
 
@@ -398,7 +463,7 @@ We conclude that a significance of $0$ is indeed representative of the earthquak
 
 ### 3. Getting related earthquakes
 
-An earthquake can be related to another one, as indicated by the `ids` property (see @todo). Let’s find earthquakes that are linked to others!
+An earthquake can be related to another one, as indicated by the `ids` property (see [Exploring and understanding the original dataset](#exploring-and-understanding-the-original-dataset)). Let’s find earthquakes that are linked to others!
 
 ```
 MATCH (e1:Earthquake)-[l:LINKED_TO]->(e2:Earthquake)
@@ -422,9 +487,9 @@ MATCH p=()-[:RECORDED_BY]->() RETURN p;
 
 This gives us a nice visualisation of the number of networks and the number of earthquakes for which they are the primary source. There are 13 networks that are the primary source for at least one earthquake. Some networks are the primary source for many, many earthquakes, while others are the primary source for very few earthquakes.
 
-### 5. Stastics about the networks
+### 5. Statistics about the networks
 
-Okay. For performance reasons, we can make the query a bit simpler and get number about the number of networks and the number of earthquakes for which they are the primary source.
+Okay. For performance reasons, we can make the query a bit simpler and get only the number of networks and the number of earthquakes for which they are the primary source.
 
 ```
 MATCH (n:Network)
@@ -433,6 +498,8 @@ OPTIONAL MATCH (:Earthquake)-[also_recorded_by:ALSO_RECORDED_BY]->(n)
 RETURN n.neo4jImportId, count(recorded_by) AS n_primary_earthquakes, count(also_recorded_by) AS n_secondary_earthquakes
 ORDER BY n_primary_earthquakes DESC, n_secondary_earthquakes DESC;
 ```
+
+For presentation purposes, we present the result as a table:
 
 `n.neo4jImportId` | `n_primary_earthquakes` | `n_secondary_earthquakes`
 ----------------- | ----------------------- | -------------------------
@@ -454,17 +521,18 @@ ORDER BY n_primary_earthquakes DESC, n_secondary_earthquakes DESC;
 
 Quarry blasts are controlled explosions designed to create craters and extend quarries. [You can find examples on YouTube.](https://www.youtube.com/watch?v=SBi1NXOnkE4)
 
-We expect quarry blasts to have a much lesser magnitude and depth that earthquakes, so let's compare the two.
+We expect quarry blasts to have a much lesser magnitude and depth that earthquakes, so let's compare the two (simply indicating `e.type` suffices to group aggregates by this value).
 
 ```
 MATCH (e:Earthquake)
-WHERE e.type = 'quarry'
-RETURN COUNT(e), AVG(e.mag), MAX(e.mag), MAX(e.felt);
+RETURN e.type, COUNT(e), AVG(e.mag), MAX(e.mag), MAX(e.felt), AVG(e.`coordinates.height`)
 ```
 
-`COUNT(e)` | `AVG(e.mag)` | `MAX(e.mag)` | `MAX(e.felt)`
----------- | ------------ | ------------ | -------------
-$129$ | $1.4604651162790696$ | $2.5$ | $2.0$
+`e.type` | `COUNT(e)` | `AVG(e.mag)` | `MAX(e.mag)` | `MAX(e.felt)` | ```AVG(e.`coordinates.height`)```
+-------- | ---------- | ------------ | ------------ | ------------- | ---------------------------------
+`earthquake` | $7539$ | $1.6278962727152113$ | $8.3$ | $9163.0$ | $23.26542552062612$
+`quarry` | $129$ | $1.4604651162790696$ | $2.5$ | $2.0$ | $0.20155038759689925$
+`null` | $1$ | `null` | `null` | `null` | $0.0$
 
 So apparently, those quarry blasts can have quite a significant magnitude! So significant that for one of them, two people actually reported the earthquake.
 
@@ -477,7 +545,7 @@ RETURN e;
 ```
 
 Property | Value
--------- | -----
+-- | -------
 `<id>` | 4:f78c7a6e-6ab3-45d8-85f4-82059e2df715:10833
 dmin | 0.00898315
 code | "71995021"
@@ -515,7 +583,7 @@ The given location seems to be a about one kilometer away from its real location
 
 ### 1. WHY are some earthquakes related?
 
-Okay, we've retried two earthquakes that are related in one of our simple queries (@todo link). However, we’re not sure what that means. Does that mean they share a similar cause? Magnitude? Location? Let's find out!
+Okay, we've retried two earthquakes that are related in one of our simple queries ([3. Getting related earthquakes](#3-getting-related-earthquakes)). However, we’re not sure what that means. Does that mean they share a similar cause? Magnitude? Location? Let's find out!
 
 They are both reviewed earthquakes, provided by the `ci` network, that happened close to "Meiners Oaks, California" (4 and 8km, respectively). They share a similar `cdi` (maximum reported intensity) of $3.7$ and $3.5$.
 
@@ -525,25 +593,253 @@ So, their relation seems to come from their location. Let’s measure exactly ho
 
 ```
 MATCH (e1:Earthquake)-[l:LINKED_TO]->(e2:Earthquake)
-RETURN point.distance(point({x: e2.coordinates[0], y: e2.coordinates[1], z: e2.coordinates[2]}), point({x: e1.coordinates[0], y: e1.coordinates[1], z: e1.coordinates[2]})), (e2.time-e1.time)/1000;
+RETURN point.distance(e2.loc, e1.loc), (e2.time-e1.time)/1000;
 ```
 ```json
 [
   {
-    "point.distance(point({x: e2.coordinates[0], y: e2.coordinates[1], z: e2.coordinates[2]}), point({x: e1.coordinates[0], y: e1.coordinates[1], z: e1.coordinates[2]}))": 5.700191085393541,
+    "point.distance(e2.loc, e1.loc)": 4332.587352497241,
     "(e2.time-e1.time)/1000": 9
   }
 ]
 ```
 
 
-They are indeed quite close, only 6km apart! And they happened only 9 seconds apart!
+They are indeed quite close, only 4km apart! (The distance is returned in meters.) And they happened only 9 seconds apart!
 
 We can even confirm how close they epicenters are on Google maps:
 
 ![The earthquakes happened a few kilometers apart](image-3.png)
 
 So, an earthquake seems to be related to another when it happened close in time and in location.
+
+### 2. Creating a relationship based on distance
+
+We first need to create a relationship. We will create a relationship between earthquakes that happened close to one another. However, creating a relationship **between all nodes** based on their distance involves going through $7669 \times 7669 = 58,813,561$ records!
+
+For this reason, we will restrict ourselves to only specific networks with not too many primary earthquakes.
+
+Let’s see what networks have the least earthquakes.
+
+```
+MATCH (n:Network)<-[r:RECORDED_BY]-(:Earthquake)
+RETURN n, count(r) AS n_earthquakes ORDER BY n_earthquakes DESC;
+```
+
+`n` | `n_earthquakes`
+--- | ----------
+`nc` | $2142$
+`ak` | $1993$
+`ci` | $1452$
+`us` | $721$
+`uu` | $288$
+`nn` | $279$
+`pr` | $219$
+`uw` | $216$
+`mb` | $159$
+`hv` | $109$
+`nm` | $80$
+`se` | $7$
+`ld` | $4$
+
+We will restrict ourselves to earthquakes primarily sourced by the "`uu`" network, as it has a few earthquakes registered, but not too many. For other networks, the number would be so large our computer wouldn’t be able to handle it.
+
+We can now create relationships!
+
+```
+MATCH (e1:Earthquake{net: "uu"})
+MATCH (e2:Earthquake{net: "uu"})
+WHERE e1.id < e2.id
+  AND e1.loc IS NOT NULL
+  AND e2.loc IS NOT NULL
+  AND point.distance(e1.loc, e2.loc) < 5000
+CREATE (e1)-[r:NEAR {distance: point.distance(e1.loc, e2.loc)}]->(e2)
+RETURN e2;
+```
+
+This creates 4082 relationships, with a `distance` property.
+
+Let’s view a graph of this:
+
+```
+MATCH (e1)-[n:NEAR]->(e2)
+RETURN e1, n, e2;
+```
+
+![Earthquakes clustered by distance](./distance_clusters.png)
+
+## Complex query
+
+In this query, we want to group similar earthquakes using one of GDS (Graph Data Science) functions.
+
+GDS is a plugin for Neo4j, and it usually needs to be installed separately. In our case, as we are using Docker (a great tool), we only had to add `"graph-data-science"` to the `NEO4J_PLUGINS` environment variable, and add `gds.*` to `NEO4J_dbms_security_procedures_unrestricted`.
+
+We first need to create a graph in memory. This will make the actual query run faster, and also prevent any modification to the actual data stored in the database.
+
+```
+MATCH (e:Earthquake)
+RETURN gds.graph.project(
+  'earthquakes_graph',
+  e,
+  null,
+  {
+    sourceNodeProperties: { coordinates: [e.`coordinates.longitude`, e.`coordinates.latitude`] },
+    targetNodeProperties: {}
+  }
+)
+```
+
+This creates a graph that only takes into account the coordinates of each earthquake.
+
+We can then run the K-means algorithm, which will identify the specified number of *communities* in our data.
+
+```
+CALL gds.kmeans.stream('cities', {
+  nodeProperty: 'coordinates',
+  k: 3,
+  randomSeed: 42
+})
+YIELD nodeId, communityId
+RETURN gds.util.asNode(nodeId).description, communityId
+ORDER BY communityId ASC
+```
+
+The output being very long, I will only display a fraction of it:
+
+### Community 0
+
+This community seems to contain medium earthquakes that happened in non-contiguous US states.
+
+```json
+{
+  "gds.util.asNode(nodeId).description": "Mag 1.2 in 97km WSW of Cantwell, Alaska",
+  "communityId": 0
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 0.8 in 34km WSW of North Nenana, Alaska",
+  "communityId": 0
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 1.4 in 14km NE of Fritz Creek, Alaska",
+  "communityId": 0
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 2.2 in 11km WSW of Captain Cook, Hawaii",
+  "communityId": 0
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 0.9 in 63km ENE of Talkeetna, Alaska",
+  "communityId": 0
+},
+```
+
+### Community 1
+
+This community seems to gather powerful earthquakes that happened around the world.
+
+```json
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.7 in 155km WSW of Panguna, Papua New Guinea",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.5 in 117km NW of Naha-shi, Japan",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.9 in 251km E of Kuril'sk, Russia",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.6 in 3km E of Carmen, Philippines",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 5.6 in 10km NNW of Linao, Philippines",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 5.0 in 130km W of Panguna, Papua New Guinea",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.8 in 107km SE of Petropavlovsk-Kamchatskiy, Russia",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.1 in 46km E of Farkhar, Afghanistan",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 5.1 in 62km NW of Finschhafen, Papua New Guinea",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 6.2 in 22km SSE of Buli, Taiwan",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.2 in 286km NNW of Al `Aquriyah, Libya",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.9 in 12km NE of Carmen, Philippines",
+    "communityId": 1
+  },
+  {
+    "gds.util.asNode(nodeId).description": "Mag 4.9 in 105km WSW of Panguna, Papua New Guinea",
+    "communityId": 1
+  },
+```
+
+### Community 2
+
+This seems to correspond to unimpressive earthquakes that happened in California.
+
+```json
+{
+  "gds.util.asNode(nodeId).description": "Mag 0.8 in 6km W of Cobb, California",
+  "communityId": 2
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 1.4 in 8km NW of Cobb, California",
+  "communityId": 2
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 1.2 in 6km NW of The Geysers, California",
+  "communityId": 2
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 0.6000000000000001 in 6km NW of The Geysers, California",
+  "communityId": 2
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 1.0 in 17km W of Niland, California",
+  "communityId": 2
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 1.1 in 6km ENE of Desert Hot Springs, California",
+  "communityId": 2
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 0.4 in 7km WNW of Cobb, California",
+  "communityId": 2
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 1.1 in 6km NW of The Geysers, California",
+  "communityId": 2
+},
+{
+  "gds.util.asNode(nodeId).description": "Mag 1.2 in 12km WNW of Niland, California",
+  "communityId": 2
+},
+```
+
+### Conclusion
+
+The K-means proved surprisingly adequate and able to categorise our data into meaningful communities, helping us get a better grasp of it in the process!
+
+\pagebreak
 
 # Appendices
 
@@ -638,3 +934,46 @@ def prepare_dataset(df_path) -> pd.DataFrame:
 
 DATASET_PATH = 'earthquakes_big.geojson.jsonl'
 ```
+
+## Neo4j is a pain
+
+Neo4j and its AOC plugin will give undecipherable Java errors for seemingly no reasons. For instance:
+
+### Confusing error messages
+
+> **Neo.ClientError.Procedure.ProcedureCallFailed**
+> Failed to invoke procedure `apoc.import.json`: Caused by: com.fasterxml.jackson.core.io.JsonEOFException: Unexpected end-of-input: expected close marker for Object (start marker at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 1]) at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 2]
+
+This is caused because the input file is a JSON file, and not a JSON Lines file.
+
+### No ability to remove existing labels
+
+[Once a label is created, it is almost impossible to delete it.](https://stackoverflow.com/a/21995745/7089212)
+
+This doesn’t work:
+
+```json
+{
+    "id": "nc72001620",
+    "type": "node",
+    "properties": {
+        "coordinates": {
+            "latitude": 38.8232,
+            "longitude": -122.7955,
+            "height": 3
+        }
+    },
+    "labels": [
+        "Earthquake"
+    ]
+}
+```
+
+We get:
+
+> **Neo.ClientError.Procedure.ProcedureCallFailed**
+> Failed to invoke procedure `apoc.import.json`: Caused by: java.lang.NullPointerException: Cannot invoke "String.toLowerCase(java.util.Locale)" because "name" is null
+
+### Inconsistent and unpredictable versionning
+
+`apoc.version()` can either return a version following a date.version format, or a semver version.
